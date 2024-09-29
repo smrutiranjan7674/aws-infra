@@ -1,0 +1,96 @@
+name: Terraform Deploy
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  push:
+    branches:
+      - main
+
+jobs:
+  terraform:
+    name: Terraform Plan and Apply
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+
+    env:
+      TF_VERSION: "1.5.0"  # Specify your Terraform version here
+      AWS_REGION: "eu-west-1" # Specify your AWS region
+      PR_WORKSPACE: ""
+
+    steps:
+      # Step 1: Checkout the code
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Step 2: Setup Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # Step 3: Install AWS CLI
+      - name: Install AWS CLI
+        run: sudo apt-get install -y awscli
+
+      # Step 4: Configure AWS Credentials using Secrets
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}  # AWS Role ARN stored in GitHub Secrets
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}  # AWS Access Key ID stored in GitHub Secrets
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}  # AWS Secret Access Key stored in GitHub Secrets
+
+      # Step 5: Set PR Workspace name dynamically
+      - name: Set PR Workspace Name
+        if: github.event_name == 'pull_request'
+        run: echo "PR_WORKSPACE=pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+
+      # Step 6: Terraform Init
+      - name: Terraform Init
+        run: terraform init
+
+      # Step 7: Set Terraform Workspace for PRs
+      - name: Set Terraform workspace for PRs
+        if: github.event_name == 'pull_request'
+        run: |
+          terraform workspace new ${{ env.PR_WORKSPACE }} || terraform workspace select ${{ env.PR_WORKSPACE }}
+
+      # Step 8: Terraform Plan for PRs
+      - name: Terraform Plan for PR
+        if: github.event_name == 'pull_request'
+        run: terraform plan -out=tfplan
+
+      # Step 9: Terraform Apply (Deploy to test) for PRs
+      - name: Terraform Apply for PR
+        if: github.event_name == 'pull_request'
+        run: terraform apply -auto-approve tfplan
+
+      # Step 10: Terraform Plan for Production (main branch)
+      - name: Terraform Plan for Production
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: terraform plan -out=tfplan
+
+      # Step 11: Terraform Apply (Deploy to Production) for main
+      - name: Terraform Apply for Production
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: terraform apply -auto-approve tfplan
+
+      # Step 12: Destroy the Test Infrastructure after Merge
+      - name: Terraform Destroy PR Workspace
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          PR_WORKSPACE="pr-${{ github.event.pull_request.number }}"
+          terraform workspace select $PR_WORKSPACE
+          terraform destroy -auto-approve
+          terraform workspace select default
+          terraform workspace delete $PR_WORKSPACE
