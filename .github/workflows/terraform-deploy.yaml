@@ -37,18 +37,33 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      # Step 3: Install AWS CLI
-      - name: Install AWS CLI
-        run: sudo apt-get install -y awscli
+      # Step 3: Install or Update AWS CLI
+      - name: Install or Update AWS CLI
+        run: |
+          if command -v aws &> /dev/null; then
+            echo "AWS CLI is already installed. Updating..."
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install --update
+          else
+            echo "Installing AWS CLI..."
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+          fi
 
+      - name: Verify AWS CLI installation
+        run: aws --version
+        
       # Step 4: Configure AWS Credentials using Secrets
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}  # AWS Role ARN stored in GitHub Secrets
           aws-region: ${{ env.AWS_REGION }}
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}  # AWS Access Key ID stored in GitHub Secrets
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}  # AWS Secret Access Key stored in GitHub Secrets
+          #aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}  # AWS Access Key ID stored in GitHub Secrets
+          #aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}  # AWS Secret Access Key stored in GitHub Secrets
+          role-session-name: GitHub-OIDC-TERRAFORM
 
       # Step 5: Set PR Workspace name dynamically
       - name: Set PR Workspace Name
