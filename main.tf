@@ -3,6 +3,6 @@ module "ebs" {
   availability_zone = "eu-west-1"
   size              = 20
   volume_type       = "gp2"
-  device_name       = "/dev/sdh"
+  #device_name       = "/dev/sdh"
   #instance_id       = "i-0123456789abcdef0"
 }
